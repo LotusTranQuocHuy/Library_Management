@@ -92,15 +92,32 @@ app.get("/book/:id", checkAuth, async (req, res) => {
 app.get("/book-detail.html",checkAuth, (req, res) => {
     res.sendFile(path.join(__dirname, "templates", "book-detail.html"));
 });
+// Nhân viên
+app.get("/add-employee.html", checkAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, "templates", "add-employee.html"));
+});
+// Người dùng
+app.get("/add-user.html", checkAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, "templates", "add-user.html"));
+});
 // Tác giả
-app.get("/author.html",checkAuth, (req, res) => {
+app.get("/add-author.html",checkAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, "templates", "add-author.html"));
+});
+app.get("/author.html", checkAuth, (req, res) => {
     res.sendFile(path.join(__dirname, "templates", "author.html"));
 });
-
+// Nhà xuất bản
+app.get("/add-publisher.html", checkAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, "templates", "add-publisher.html"));
+});
+// Môn học
+app.get("/add-subject.html", checkAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, "templates", "add-subject.html"));
+});
 app.get("/author/:id", checkAuth, async (req, res) => {
     const authorId = req.params.id;
     const query = "Call GetAuthor(?)";
-
     try {
         // Sử dụng db.execute() hoặc db.query() với promise
         const [results] = await db.execute(query, [authorId]);
@@ -392,7 +409,7 @@ app.post('/register', (req, res) => {
                     console.error("Lỗi khi mã hóa mật khẩu:", err ? err.message : "Mật khẩu không hợp lệ");
                     return res.status(500).json({ success: false, message: "Lỗi khi mã hóa mật khẩu!" });
                 }
-
+                
                 // Thêm người dùng mới vào database
                 const insertQuery = `
                     INSERT INTO user (User_ID, Full_Name, Email, Password, Phone_number, Sinh_vien, Giao_vien)
@@ -566,7 +583,7 @@ app.get('/borrowed-books',checkAuth, async (req, res) => {
 });
 
 // Lấy danh sách sách đã mượn
-app.post('/add-book',upload.none(), async (req, res) => {
+app.post('/add-book', async (req, res) => {
     const {
       book, author, book_subject, book_publisher_name,
       image, pub_date, earliest_pub_date, language, isbn
@@ -601,7 +618,7 @@ app.patch('/update-return-date/:borrowId', async (req, res) => {
       if (month < 1 || month > 12 || day < 1 || day > 31) {
         return res.status(400).json({ message: 'Ngày trả không hợp lệ' });
       }
-  
+ 
       // Chuyển đổi ngày từ chuỗi sang định dạng Date (yyyy-mm-dd)
       const dateObj = new Date(year, month - 1, day);
       const formattedDate = dateObj.toLocaleDateString('en-CA'); // 'yyyy-mm-dd'
@@ -706,6 +723,203 @@ app.delete("/delete-employee/:id", async (req, res) => {
     } catch (err) {
         console.error("Lỗi xóa employee:", err);
         res.status(500).json({ error: "Lỗi khi xóa nhân viên" });
+    }
+});
+// Thêm nhân viên 
+app.post('/add-employee', upload.none(), checkAuth, async (req, res) => {
+    const { fullName, email, password, phone, role } = req.body;
+    console.log("Received data:", req.body);
+
+    if (!fullName || !email || !password || !role) {
+        return res.status(400).json({ success: false, message: "Tất cả các trường bắt buộc phải được điền!" });
+    }
+
+    try {
+        // Lấy Admin_ID từ session (giả sử admin đang đăng nhập)
+        const adminId = req.session.user_id || null; // Nếu không có admin, để NULL
+
+        // Kiểm tra email có bị trùng không (đã có trong thủ tục, nhưng có thể kiểm tra trước để tối ưu)
+        const [emailRows] = await db.query('SELECT * FROM employee WHERE Email = ?', [email]);
+        if (emailRows.length > 0) {
+            return res.status(400).json({ success: false, message: "Email đã tồn tại!" });
+        }
+
+        // Kiểm tra số điện thoại có bị trùng không (nếu cần)
+        if (phone) {
+            const [phoneRows] = await db.query('SELECT * FROM employee WHERE Phone_number = ?', [phone]);
+            if (phoneRows.length > 0) {
+                return res.status(400).json({ success: false, message: "Số điện thoại đã tồn tại!" });
+            }
+        }
+
+        // Mã hóa mật khẩu
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Thêm nhân viên vào database
+        await db.query('CALL add_employee(?, ?, ?, ?, ?, ?)', [
+            adminId,      // Admin_ID từ session
+            fullName,     // Full_Name
+            email,        // Email
+            phone || null, // Phone_number (cho phép NULL)
+            role,         // Role (Employee hoặc Admin)
+            hashedPassword // Password đã mã hóa
+        ]);
+
+        res.json({ success: true, message: "Thêm nhân viên thành công!" });
+    } catch (err) {
+        console.error("Lỗi khi thêm nhân viên:", err);
+        res.status(500).json({ success: false, message: err.sqlMessage || "Lỗi máy chủ!" });
+    }
+});
+// Thêm người dùng
+app.post('/add-user', upload.none(), checkAuth, async (req, res) => {
+    const { userId, fullName, email, password, phone, role } = req.body;
+    console.log("Received data:", req.body);
+
+    if (!userId || !fullName || !email || !password || !phone || !role) {
+        return res.status(400).json({ success: false, message: "Tất cả các trường đều bắt buộc!" });
+    }
+
+    try {
+        // Kiểm tra User_ID có bị trùng không
+        const [userIdRows] = await db.query('SELECT * FROM user WHERE User_ID = ?', [userId]);
+        if (userIdRows.length > 0) {
+            return res.status(400).json({ success: false, message: "Mã người dùng đã tồn tại!" });
+        }
+
+        // Kiểm tra email có bị trùng không
+        const [emailRows] = await db.query('SELECT * FROM user WHERE Email = ?', [email]);
+        if (emailRows.length > 0) {
+            return res.status(400).json({ success: false, message: "Email đã tồn tại!" });
+        }
+
+        // Kiểm tra số điện thoại có bị trùng không
+        const [phoneRows] = await db.query('SELECT * FROM user WHERE Phone_number = ?', [phone]);
+        if (phoneRows.length > 0) {
+            return res.status(400).json({ success: false, message: "Số điện thoại đã tồn tại!" });
+        }
+
+        // Ánh xạ vai trò
+        const sinhvien = role === 'sinhvien' ? 1 : 0;
+        const giaovien = role === 'giaovien' ? 1 : 0;
+
+        // Mã hóa mật khẩu
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Thêm người dùng vào database
+        await db.query('CALL add_user(?, ?, ?, ?, ?, ?, ?)', [
+            userId,
+            fullName,
+            email,
+            hashedPassword,
+            phone,
+            sinhvien,
+            giaovien
+        ]);
+
+        res.json({ success: true, message: "Thêm người dùng thành công!" });
+    } catch (err) {
+        console.error("Lỗi khi thêm người dùng:", err);
+        res.status(500).json({ success: false, message: err.sqlMessage || "Lỗi máy chủ!" });
+    }
+});
+// Thêm tác giả
+app.post('/add-author', upload.none(), checkAuth, async (req, res) => {
+    const { authorId, author, birthDate, deathDate, numberOfBooks, firstPublicationDate, lastPublicationDate, booksInSeries } = req.body;
+    console.log("Received data:", req.body);
+
+    if (!authorId || !author) {
+        return res.status(400).json({ success: false, message: "Mã tác giả và tên tác giả là bắt buộc!" });
+    }
+
+    try {
+        // Kiểm tra Author_ID có bị trùng không
+        const [authorIdRows] = await db.query('SELECT * FROM all_authors WHERE Author_ID = ?', [authorId]);
+        if (authorIdRows.length > 0) {
+            return res.status(400).json({ success: false, message: "Mã tác giả đã tồn tại!" });
+        }
+
+        // Thêm tác giả vào database
+        await db.query('CALL add_author(?, ?, ?, ?, ?, ?, ?, ?)', [
+            authorId,
+            author,
+            birthDate || null,
+            deathDate || null,
+            numberOfBooks || null,
+            firstPublicationDate || null,
+            lastPublicationDate || null,
+            booksInSeries || null
+        ]);
+
+        res.json({ success: true, message: "Thêm tác giả thành công!" });
+    } catch (err) {
+        console.error("Lỗi khi thêm tác giả:", err);
+        res.status(500).json({ success: false, message: err.sqlMessage || "Lỗi máy chủ!" });
+    }
+});
+app.post('/check-author-id', async (req, res) => {
+    const { authorId } = req.body;
+
+    try {
+        const [rows] = await db.query('SELECT * FROM all_authors WHERE Author_ID = ?', [authorId]);
+        if (rows.length > 0) {
+            return res.json({ success: false, message: 'author_id_exists' });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Lỗi khi kiểm tra Author_ID:", err);
+        res.status(500).json({ success: false, message: "Lỗi máy chủ!" });
+    }
+});
+// Thêm nhà xuất bản
+app.post('/add-publisher', upload.none(), checkAuth, async (req, res) => {
+    const { book_publisher, number_of_books_published, earliest_publication_date, latest_publication_date } = req.body;
+    console.log(req.body); 
+    if (!book_publisher || !number_of_books_published || !earliest_publication_date || !latest_publication_date) {
+        return res.status(400).json({ success: false, message: "Tất cả các trường đều bắt buộc!" });
+    }
+
+    try {
+        await db.query('CALL add_publisher(?, ?, ?, ?)', [
+            book_publisher,
+            number_of_books_published,
+            earliest_publication_date,
+            latest_publication_date
+        ]);
+
+        res.json({ success: true, message: "Thêm nhà xuất bản thành công!" });
+    } catch (err) {
+        console.error("Lỗi khi thêm nhà xuất bản:", err);
+        res.status(500).json({ success: false, message: err.sqlMessage || "Lỗi máy chủ!" });
+    }
+});
+// Thêm subject
+// Hiển thị form thêm môn học
+app.get("/add-subject.html", checkAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, "templates", "add-subject.html"));
+});
+
+// Thêm chủ đề
+app.post('/add-subject', upload.none(), checkAuth, async (req, res) => {
+    const { bookSubject, numberOfAuthors, numberOfBooks } = req.body;
+    console.log("Received data:", req.body);
+
+    if (!bookSubject || !numberOfAuthors || !numberOfBooks) {
+        return res.status(400).json({ success: false, message: "Tất cả các trường đều bắt buộc!" });
+    }
+
+    try {
+        // Thêm môn học vào database
+        await db.query('CALL add_subject(?, ?, ?)', [
+            bookSubject,
+            parseInt(numberOfAuthors), // Chuyển sang số nguyên
+            parseInt(numberOfBooks)    // Chuyển sang số nguyên
+        ]);
+
+        res.json({ success: true, message: "Thêm chủ đề thành công!" });
+    } catch (err) {
+        console.error("Lỗi khi thêm chủ đề:", err);
+        res.status(500).json({ success: false, message: err.sqlMessage || "Lỗi máy chủ!" });
     }
 });
 //// Thông tin phạt ////
